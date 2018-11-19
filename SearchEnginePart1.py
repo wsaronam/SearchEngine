@@ -2,7 +2,6 @@ import os
 import re
 import pathlib
 import nltk
-import json
 import pickledb
 from nltk.tokenize import RegexpTokenizer
 from nltk.corpus import stopwords
@@ -11,7 +10,9 @@ from bs4.element import Comment
 
 
 
+
 root = "C:/Users/Sync/Desktop/project3/WEBPAGES_RAW/35"
+
 
 # tag_visible by jbochi (StackOverflow)
 def tag_visible(element):
@@ -35,7 +36,7 @@ def getContents(filePath):
 
     soup = BeautifulSoup(contents, "html.parser")
     
-    # Text grabbing by jbochi (StackOverFlow)
+    # Text grabbing by jbochi (StackOverflow)
     texts = soup.findAll(text=True)
     visible_texts = filter(tag_visible, texts)
     return u" ".join(t.strip() for t in visible_texts) # end
@@ -43,18 +44,19 @@ def getContents(filePath):
 
 def tokenizeContents(contentsString):
     '''
-    Tokenizes the contents of a file and puts them into an array.
-    TODO: Lemmatization/Stemming and keep hyphens.  lowercase everything
+    Tokenizes the contents of a file and puts them into a list.
+    TODO: Lemmatization/Stemming and keep hyphens.
     '''
     # Tokenizing by kgraney and malouf (StackOverflow)
     tokenizer = RegexpTokenizer(r'\w+')
-    tokens = tokenizer.tokenize(contentsString) # end
+    tokens = tokenizer.tokenize(contentsString.lower()) # end
 
     for token in tokens:
         if token in stopwords.words('english'):
             tokens.remove(token)
 
     return tokens
+
 
 def indexTokens(listOfTokens, listOfPairs, docID):
     '''
@@ -64,33 +66,38 @@ def indexTokens(listOfTokens, listOfPairs, docID):
         listOfPairs.append((token, docID))
 
 
-def constructInvertedIndex(listOfPairs):
+def buildInvertedIndexDB(listOfPairs):
     '''
+    Iterates over the list of all token and docID pairings in all parsed
+    documents and created an inverted index database for the tokens.
     '''
-    invertedIndex = {}
-    
-    for tup in listOfPairs:
-        if tup[0] not in invertedIndex:
-            # add to dict
-            newToken = {}
-            newToken[str(tup[1])] = 1
-            invertedIndex[tup[0]] = newToken
-        else:
-            # add to dict of existing token
-            if str(tup[1]) in invertedIndex[tup[0]]:
-                # incrememnt value
-                invertedIndex[tup[0]][str(tup[1])] += 1
-            else:
-                # add new path and frequency to the invertedindex dict
-                invertedIndex[tup[0]][str(tup[1])] = 1
+    db = pickledb.load("database.db", False)
 
-    return invertedIndex
-                
+    for tup in listOfPairs:
+        token = tup[0]
+        path = str(tup[1])
+        
+        if db.exists(token) == False:
+            valueDict = {}
+            valueDict[path] = 1
+            db.set(token, valueDict)
+        else:
+            currentDict = db.get(token)
+            if path not in currentDict:
+                currentDict[path] = 1
+            else:
+                currentDict[path] += 1
+            
+            db.set(token, currentDict)
+    
+    db.dump()
+
 
 def createInvertedIndex(root):
     '''
+    Runs previously created functions to parse the given files, tokenize
+    the texts, and constructs the inverted index database.
     '''
-    counter = 0
     listOfTokenPairs = []
     
     # File Traversal by Eli Bendersky
@@ -103,24 +110,18 @@ def createInvertedIndex(root):
                 tokenizedList = tokenizeContents(contents)
                 
                 indexTokens(tokenizedList, listOfTokenPairs, filePath)
-                counter += 1
-                print(counter)
 
-    invertedIndex = constructInvertedIndex(listOfTokenPairs)
-    print(invertedIndex)
+    buildInvertedIndexDB(listOfTokenPairs)
     
-    with open("data.json", "w") as outfile:
-        json.dump(invertedIndex, outfile)
-
 
 def retrieveQuery():
-    query = input()
-    jdata = json.load
+    query = input("Enter search query: ")
 
 
 
-    
-print("Creating Inverted Index...")    
+
+print("Creating Inverted Index...")
 createInvertedIndex(root)
-print("Completed!")
+print("Inverted Index Creation Completed!")
+retrieveQuery()
 
