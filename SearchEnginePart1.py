@@ -10,8 +10,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Comment
 
 
-
-root = "C:/Users/Sync/Desktop/project3/WEBPAGES_RAW/35"
+root = "./WEBPAGES_RAW"
 
 # tag_visible by jbochi (StackOverflow)
 def tag_visible(element):
@@ -29,7 +28,7 @@ def getContents(filePath):
     given as input.
     INPUT MUST BE A FILE TYPE FILE
     '''
-    openedContents = open(filePath, 'r', encoding="utf-8")
+    openedContents = open(filePath, 'r', encoding="utf-8", errors='ignore')
     contents = openedContents.read()
     openedContents.close()
 
