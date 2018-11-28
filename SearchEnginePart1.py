@@ -1,17 +1,27 @@
-import os
-import re
-import pathlib
-import nltk
 import json
+import math
+import nltk
+import os
+import pathlib
 import pickledb
-from nltk.tokenize import RegexpTokenizer
-from nltk.corpus import stopwords
+import re
 from bs4 import BeautifulSoup
 from bs4.element import Comment
+from nltk.corpus import stopwords
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.tokenize import RegexpTokenizer
+import string
+import math
+from collections import defaultdict
 
 
 
-root = "C:/Users/Sync/Desktop/project3/WEBPAGES_RAW/35"
+
+root = "C:/Users/Sync/Desktop/project3/WEBPAGES_RAW/"
+
+# List of insignificant words (for query priming):
+insigWords = stopwords.words('english') + list(string.punctuation)
+#print(insigWords)
 
 # tag_visible by jbochi (StackOverflow)
 def tag_visible(element):
@@ -21,7 +31,7 @@ def tag_visible(element):
         return False
     else:
         return True # end
-    
+
 
 def getContents(filePath):
     '''
@@ -35,7 +45,7 @@ def getContents(filePath):
 
     soup = BeautifulSoup(contents, "html.parser")
     
-    # Text grabbing by jbochi (StackOverFlow)
+    # Text grabbing by jbochi (StackOverflow)
     texts = soup.findAll(text=True)
     visible_texts = filter(tag_visible, texts)
     return u" ".join(t.strip() for t in visible_texts) # end
@@ -43,84 +53,181 @@ def getContents(filePath):
 
 def tokenizeContents(contentsString):
     '''
-    Tokenizes the contents of a file and puts them into an array.
-    TODO: Lemmatization/Stemming and keep hyphens.  lowercase everything
+    Tokenizes the contents of a file and puts them into a list.
     '''
     # Tokenizing by kgraney and malouf (StackOverflow)
-    tokenizer = RegexpTokenizer(r'\w+')
-    tokens = tokenizer.tokenize(contentsString) # end
-
+    tokenizer = RegexpTokenizer(r"([a-zA-Z]*[-]?\w*[-]?\w+)")
+    tokens = tokenizer.tokenize(contentsString.lower()) # end
+    
     for token in tokens:
         if token in stopwords.words('english'):
             tokens.remove(token)
 
     return tokens
 
-def indexTokens(listOfTokens, listOfPairs, docID):
+
+def indexTokens(listOfTokens, docID):
     '''
-    Indexes the tokens into a database.
+    First, lemmatizes each token then indexes the tokens to prepare
+    for database storage.
     '''
+    lemmatizer = WordNetLemmatizer()
+    
+    listOfPairs = []
     for token in listOfTokens:
+        token = lemmatizer.lemmatize(token)
         listOfPairs.append((token, docID))
 
+    return listOfPairs
 
-def constructInvertedIndex(listOfPairs):
+
+def buildInvertedIndexDB(listOfPairs, dbToDump):
     '''
+    Iterates over the list of all token and docID pairings in a parsed
+    document and creates/adds onto the inverted index database dictionary
+    to be added later into the database file.
+    NOTE: As a design choice, we skipped the initial indexing tokens step
+    to save writes to memory/RAM and improving indexing speed since it can all
+    be done less iterations.
     '''
-    invertedIndex = {}
-    
+    counter = 0
     for tup in listOfPairs:
-        if tup[0] not in invertedIndex:
-            # add to dict
-            newToken = {}
-            newToken[str(tup[1])] = 1
-            invertedIndex[tup[0]] = newToken
+        token = tup[0]
+        path = str(tup[1])
+        
+        if token not in dbToDump:
+            valueDict = {}
+            valueDict[path] = [counter]
+            dbToDump[token] = valueDict
         else:
-            # add to dict of existing token
-            if str(tup[1]) in invertedIndex[tup[0]]:
-                # incrememnt value
-                invertedIndex[tup[0]][str(tup[1])] += 1
+            if path not in dbToDump[token]:
+                dbToDump[token][path] = [counter]
             else:
-                # add new path and frequency to the invertedindex dict
-                invertedIndex[tup[0]][str(tup[1])] = 1
+                dbToDump[token][path].append(counter)
 
-    return invertedIndex
-                
+        counter += 1
+
+
+def dumpDictIntoDatabase(dbToDump):
+    '''
+    Takes the built dictionary of tokens, paths, and occurences and saves it
+    into the inverted index database.
+    '''
+    db = pickledb.load("database.db", False)
+
+    for k,v in dbToDump.items():
+        db.set(k, v)
+    
+    db.dump()
+
 
 def createInvertedIndex(root):
     '''
+    Runs previously created functions to parse the given files, tokenize
+    the texts, and constructs the inverted index database.
     '''
-    counter = 0
-    listOfTokenPairs = []
+    dbToDump = {}
+    numOfDocuments = 0
     
     # File Traversal by Eli Bendersky
     for path, subdirs, files in os.walk(root):
         for name in files:
             filePath = pathlib.PurePath(path, name) # end
-
+            
             if "bookkeeping" not in str(filePath):
                 contents = getContents(filePath)
                 tokenizedList = tokenizeContents(contents)
                 
-                indexTokens(tokenizedList, listOfTokenPairs, filePath)
-                counter += 1
-                print(counter)
+                listOfTokenPairs = indexTokens(tokenizedList, filePath)
+                buildInvertedIndexDB(listOfTokenPairs, dbToDump)
+                numOfDocuments += 1
 
-    invertedIndex = constructInvertedIndex(listOfTokenPairs)
-    print(invertedIndex)
+    dumpDictIntoDatabase(dbToDump)
+    return numOfDocuments
+
+
+def calculateTFIDF(numOfDocuments):
+    '''
+    Iterates through the database and calculates the tf-idf scoring/ranking
+    number for each token path.
+    '''
+    db = pickledb.load("database.db", False)
+    tokens = db.getall()
+
+    for token in tokens:
+        numOfDocsWithToken = len(token)
+        for path, listOfIndices in db.get(token).items():
+            numOfAppearancesInDoc = len(listOfIndices)
+
+            tfidf = math.log(numOfDocuments/numOfDocsWithToken, 10) * math.log(numOfAppearancesInDoc, 10)
+            db.get(token)[path].append(tfidf)
+
+    db.dump()
+
+'''
+Function to query with input ranging from 1 word to sentences. 
+'''
+
+def tokenizeQuery(phrase):
+    queryList = []
+    queryDict = {}
+    # Parse query, remove stopwords, tokenize and add to queryList
+    for tokens in nltk.word_tokenize(phrase.lower()):
+        if tokens not in insigWords:
+            queryList.append(tokens)
+    for terms in queryList:
+        print(terms)
+        termF = queryList.count(terms)
+        tf = (1 + math.log10(termF))
+        queryDict[terms] = tf
+    return queryDict
     
-    with open("data.json", "w") as outfile:
-        json.dump(invertedIndex, outfile)
-
-
+ 
 def retrieveQuery():
-    query = input()
-    jdata = json.load
+
+    # Create dicts for score, doc length, query length.
+    score = defaultdict(float)
+    doc_length = defaultdict(float)
+    queryLength = defaultdict(float)
+
+    '''
+    Prompts the user for a search query and returns URLs of results of
+    the search query.
+    '''
+    #query = input("Enter search query: ")
+    query = 'hello my name is malcolm malcolm'
+    queryDict = tokenizeQuery(query)
+
+    db = pickledb.load("database.db", False)
+
+    # Term with tf 
+    print(queryDict)
 
 
 
-    
-print("Creating Inverted Index...")    
-createInvertedIndex(root)
-print("Completed!")
+
+
+
+
+    '''
+
+    with open('./WEBPAGES_RAW/bookkeeping.json') as f:
+        data = json.load(f)
+
+    for k in queryDict:
+        bookkeepingIndex = k.split("\\")[-2:]
+        term = str('/'.join(bookkeepingIndex))
+        print(data[term])
+    '''
+
+
+
+
+
+
+#numOfDocuments = createInvertedIndex(root)
+#calculateTFIDF(numOfDocuments)
+#print("Number of documents: " + str(numOfDocuments))
+retrieveQuery()
+
 
