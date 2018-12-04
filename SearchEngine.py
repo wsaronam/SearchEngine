@@ -187,7 +187,7 @@ def retrieveQuery(query):
     Prompts the user for a search query and returns top 10 URLs of results of
     the search query.
     '''
-    # Create dicts for score, doc length, query length.
+    # Create dicts for score, doc vector length, query vector length.
     score = defaultdict(float)
     doc_length = defaultdict(float)
     queryLength = defaultdict(float)
@@ -198,13 +198,13 @@ def retrieveQuery(query):
     db = pickledb.load("database.db", False)
 
     for queryToken in queryDict:
-        for same_term_list in db[queryToken]:
-            if len(same_term_list) > 0:
+        for termList in db[queryToken]:
+            if len(termList) > 0:
                 for docID, docTFIDF in db[queryToken].items():
                     docTFIDF = docTFIDF[-1]
-                    score[docID] += (docTFIDF * queryDict[queryToken] * math.log10(37497 / len(same_term_list)))
+                    score[docID] += (docTFIDF * queryDict[queryToken] * math.log10(37497 / len(termList)))
                     doc_length[docID] += math.pow(1 + docTFIDF, 2)
-                    queryLength[docID] += math.pow(queryDict[queryToken] * math.log10(37497 / len(same_term_list)),2)
+                    queryLength[docID] += math.pow(queryDict[queryToken] * math.log10(37497 / len(termList)),2)
 
     for i in score:
         score[i] /= (math.sqrt(queryLength[i]) * math.sqrt(doc_length[i]))
@@ -224,42 +224,37 @@ def retrieveQuery(query):
     return searchList
 
 
-    
-#numOfDocuments = createInvertedIndex(root)
-#calculateTFIDF(numOfDocuments)
+'''
+run_search_engine_parser(): Run the parser and indexer for our search engine
 
-global data
+'''
 
+def run_search_engine_parser():
+    numOfDocuments = createInvertedIndex(root)
+    calculateTFIDF(numOfDocuments)
+
+'''
+search(): Retrieves and displays top-10 queries based on used input. 
+'''
 def search():
+    # Source: http://effbot.org/tkinterbook/listbox.htm
     data = retrieveQuery(searchQuery.get())
     frame = Frame(root)
-    frame.pack()
-
-    tree = ttk.Treeview(frame, columns = (1), height = 5, show = "headings")
-    tree.pack(side = 'left')
-
-    tree.heading(1, text="Search Results")
-
-    tree.column(1, width = 100)
-
-    scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-    scroll.pack(side = 'right', fill = 'y')
-
-    tree.configure(yscrollcommand=scroll.set)
-
+    scrollbar = Scrollbar(frame, orient=VERTICAL)
+    searchResults = Listbox(root, yscrollcommand=scrollbar.set)
+    scrollbar.config(command=searchResults.yview)
+    
     for val in data:
-        tree.insert('', 'end', values = val )
-
+        searchResults.insert(END, val)
+    searchResults.pack(side=LEFT, fill=BOTH, expand=1)
+    scrollbar.pack(side=RIGHT, fill=Y)
+    frame.pack()
 root = Tk()
-
 Label(text="Slightly Below-Average Search Query").pack(padx=25)
-
 searchQuery = Entry(root)
 searchQuery.pack()
-
 searchButton = Button(root, text="Search",
                           command=search)
-searchButton.pack(pady=(5, 25))
-
-
+searchButton.pack(pady=(5, 5))
+Button(root, text="Quit", command=root.destroy).pack()
 root.mainloop()
