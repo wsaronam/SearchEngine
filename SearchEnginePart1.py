@@ -13,6 +13,7 @@ from nltk.tokenize import RegexpTokenizer
 import string
 import math
 from collections import defaultdict
+import operator
 
 
 
@@ -158,7 +159,7 @@ def calculateTFIDF(numOfDocuments):
         numOfDocsWithToken = len(token)
         for path, listOfIndices in db.get(token).items():
             numOfAppearancesInDoc = len(listOfIndices)
-            tfidf = math.log(numOfDocuments/numOfDocsWithToken, 10) * math.log(numOfAppearancesInDoc, 10)
+            tfidf = math.log10(numOfDocuments/numOfDocsWithToken, 10) * math.log10(numOfAppearancesInDoc, 10)
             db.get(token)[path].append(tfidf)
     db.dump()
 
@@ -194,7 +195,6 @@ def retrieveQuery():
     #query = input("Enter search query: ")
     query = 'artificial intelligence'
     queryDict = tokenizeQuery(query)
-    print(queryDict)
 
     db = pickledb.load("database.db", False)
 
@@ -202,33 +202,37 @@ def retrieveQuery():
     # print(queryDict)
 
     for queryToken in queryDict:
-        for queryTokenIndex, values in db[queryToken].items():
-            # Todo: check for NO return
-            print(queryTokenIndex)
-            print(values)
-            print(values[-1])
-            # Calculate total tf.idf of document + query
-            score[queryTokenIndex] += (values[-1] * queryDict[queryToken] * math.log(37497/ len(db[queryToken].items())))
-            doc_length[queryTokenIndex] += 1 + math.pow(values[-1], 2)
-            queryLength[queryTokenIndex] += math.pow(queryDict[queryToken] * math.log(37497/ len(db[queryToken].items())), 2)
+        for same_term_list in db[queryToken]:
+            if len(same_term_list) > 0:
+                for docID, docTFIDF in db[queryToken].items():
+                    docTFIDF = docTFIDF[-1]
+                    score[docID] += (docTFIDF * queryDict[queryToken] * math.log10(37497 / len(same_term_list)))
+                    doc_length[docID] += math.pow(1 + docTFIDF, 2)
+                    queryLength[docID] += math.pow(queryDict[queryToken] * math.log10(37497 / len(same_term_list)),2)
 
-    numK = 1
+                    #print('Score: ', score[docID])
+                    #print('Doc Vector Length: ', doc_length[docID] )
+                    #print('Query Vector Length: ', queryLength[docID] )
 
+    numK = 0
+
+    print(len(doc_length))
     for i in score:
-        print('ql', queryLength[i])
-        print('dl', doc_length[i])
         score[i] /= (math.sqrt(queryLength[i]) * math.sqrt(doc_length[i]))
-        print(score[i])
-        if numK <= 10:
-            numK += 1
-            with open('./WEBPAGES_RAW/bookkeeping.json') as f:
-                data = json.load(f)
-            for k in score:
-                bookkeepingIndex = k.split("/")[-2:]
-                term = str('/'.join(bookkeepingIndex))
-                print('URL: ', data[term], 'Cosine similarity: ', score[k])
-        elif numK > 10:
-            break    
+
+    sorted_scores = sorted(score.items(), key = operator.itemgetter(1), reverse=True)
+
+    
+    for x in sorted_scores:
+        with open('./WEBPAGES_RAW/bookkeeping.json') as f:
+            data = json.load(f)
+        numK += 1
+        bookkeepingIndex = x[0].split("/")[-2:]
+        term = str('/'.join(bookkeepingIndex))
+        print('URL: ', data[term] + ' ' + str(x[1]))
+        if numK == 10:
+            break
+
 
 
 
