@@ -158,10 +158,8 @@ def calculateTFIDF(numOfDocuments):
         numOfDocsWithToken = len(token)
         for path, listOfIndices in db.get(token).items():
             numOfAppearancesInDoc = len(listOfIndices)
-
             tfidf = math.log(numOfDocuments/numOfDocsWithToken, 10) * math.log(numOfAppearancesInDoc, 10)
             db.get(token)[path].append(tfidf)
-
     db.dump()
 
 '''
@@ -176,9 +174,8 @@ def tokenizeQuery(phrase):
         if tokens not in insigWords:
             queryList.append(tokens)
     for terms in queryList:
-        print(terms)
         termF = queryList.count(terms)
-        tf = (1 + math.log10(termF))
+        tf = (1 + math.log(termF))
         queryDict[terms] = tf
     return queryDict
     
@@ -195,14 +192,43 @@ def retrieveQuery():
     the search query.
     '''
     #query = input("Enter search query: ")
-    query = 'hello my name is malcolm malcolm'
+    query = 'artificial intelligence'
     queryDict = tokenizeQuery(query)
+    print(queryDict)
 
     db = pickledb.load("database.db", False)
 
     # Term with tf 
-    print(queryDict)
+    # print(queryDict)
 
+    for queryToken in queryDict:
+        for queryTokenIndex, values in db[queryToken].items():
+            # Todo: check for NO return
+            print(queryTokenIndex)
+            print(values)
+            print(values[-1])
+            # Calculate total tf.idf of document + query
+            score[queryTokenIndex] += (values[-1] * queryDict[queryToken] * math.log(37497/ len(db[queryToken].items())))
+            doc_length[queryTokenIndex] += 1 + math.pow(values[-1], 2)
+            queryLength[queryTokenIndex] += math.pow(queryDict[queryToken] * math.log(37497/ len(db[queryToken].items())), 2)
+
+    numK = 1
+
+    for i in score:
+        print('ql', queryLength[i])
+        print('dl', doc_length[i])
+        score[i] /= (math.sqrt(queryLength[i]) * math.sqrt(doc_length[i]))
+        print(score[i])
+        if numK <= 10:
+            numK += 1
+            with open('./WEBPAGES_RAW/bookkeeping.json') as f:
+                data = json.load(f)
+            for k in score:
+                bookkeepingIndex = k.split("/")[-2:]
+                term = str('/'.join(bookkeepingIndex))
+                print('URL: ', data[term], 'Cosine similarity: ', score[k])
+        elif numK > 10:
+            break    
 
 
 
@@ -218,7 +244,7 @@ def retrieveQuery():
         bookkeepingIndex = k.split("\\")[-2:]
         term = str('/'.join(bookkeepingIndex))
         print(data[term])
-    '''
+    ''' 
 
 
 
